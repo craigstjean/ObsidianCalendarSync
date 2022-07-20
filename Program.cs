@@ -1,10 +1,12 @@
 ﻿using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Web;
 using CalendarSync.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
+using Newtonsoft.Json;
 using Directory = System.IO.Directory;
 using File = System.IO.File;
 
@@ -36,6 +38,8 @@ internal class Program
 
         using var db = new EventContext();
 
+        Microsoft.Graph.Event? currentEvent = null;
+
         try
         {
             // Make the interactive token request
@@ -48,13 +52,36 @@ internal class Program
                 return Task.CompletedTask;
             }));
 
-            var startDateTime = DateTime.Now.Date - TimeSpan.FromDays(30);
-            var endDateTime = DateTime.Now.Date + TimeSpan.FromDays(365);
+            var syncState = db.SyncStates.FirstOrDefault(s => s.Principal == authResult.Account.Username);
+            if (syncState == null)
+            {
+                syncState = new SyncState();
+                syncState.Principal = authResult.Account.Username;
+                db.SyncStates.Add(syncState);
+            }
 
-            var eventsRequest = graphClient.Me.Calendar.CalendarView.Request(new List<QueryOption> {
-                new QueryOption("startDateTime", startDateTime.ToString("o")),
-                new QueryOption("endDateTime", endDateTime.ToString("o"))
-            });
+            var startDateTime = DateTime.Now.Date - TimeSpan.FromDays(365);
+            var endDateTime = DateTime.Now.Date + TimeSpan.FromDays(365 * 2);
+
+            var queryOptions = new List<QueryOption>();
+            if (string.IsNullOrEmpty(syncState.DeltaUrl) || endDateTime - DateTime.Now < TimeSpan.FromDays(365))
+            {
+                queryOptions.Add(new QueryOption("startDateTime", startDateTime.ToString("o")));
+                queryOptions.Add(new QueryOption("endDateTime", endDateTime.ToString("o")));
+                syncState.StartWindow = startDateTime;
+                syncState.EndWindow = endDateTime;
+            }
+            else
+            {
+                var deltaUri = new Uri(syncState.DeltaUrl);
+                var deltaToken = HttpUtility.ParseQueryString(deltaUri.Query).Get("$deltatoken");
+                queryOptions.Add(new QueryOption("$deltatoken", deltaToken));
+            }
+
+            var eventsRequest = graphClient.Me.Calendar.CalendarView
+                .Delta()
+                .Request(queryOptions)
+                .Select("id,iCalUId,start,end,showAs,subject,isAllDay,isCancelled,location,onlineMeetingUrl,body");
 
             var events = eventsRequest;
             
@@ -66,6 +93,12 @@ internal class Program
                 foreach (var e in page)
                 {
                     Console.WriteLine(++count);
+                    currentEvent = e;
+
+                    if (e.Subject == null)
+                    {
+                        continue;
+                    }
 
                     var existingEvent = db.Events
                         .Include(e => e.EventBody)
@@ -137,9 +170,18 @@ internal class Program
                 }
                 else
                 {
+                    object? deltaLink;
+                    if (page.AdditionalData.TryGetValue("@odata.deltaLink", out deltaLink))
+                    {
+                        syncState.DeltaUrl = deltaLink.ToString();
+                    }
+                    
                     events = null;
                 }
             } while (events != null);
+
+            db.SaveChanges();
+
 
             Console.WriteLine("Done");
         }
@@ -150,6 +192,11 @@ internal class Program
         catch (Exception ex)
         {
             Console.WriteLine($"Error: {ex}");
+            if (currentEvent != null)
+            {
+                var ces = JsonConvert.SerializeObject(currentEvent);
+                System.Console.WriteLine(ces);
+            }
         }
 
         if (System.Diagnostics.Debugger.IsAttached)
@@ -158,8 +205,6 @@ internal class Program
             Console.ReadKey();
         }
     }
-
-    
 
     private static void PurgeInPath(string path)
     {
@@ -234,9 +279,15 @@ internal class Program
         return scrubbedSubject;
     }
 
-    private static bool IsIgnore(string subject, List<EventFilter> filters)
+    private static bool IsIgnore(string subject, string body, List<EventFilter> filters)
     {
-        return filters.Any(f => subject.ToLower().Contains(f.Search.ToLower()) && f.IsIgnore);
+        var ignore = filters.Any(f => subject.ToLower().Contains(f.Search.ToLower()) && f.IsIgnore);
+        if (!ignore)
+        {
+            ignore = body.Contains("==CSIGNORE==");
+        }
+
+        return ignore;
     }
 
     private static bool IsPersonal(string subject, List<EventFilter> filters)
@@ -272,7 +323,7 @@ internal class Program
             var eventDateString = e.IsAllDay ? e.Start.ToString("yyyy-MM-dd") : e.Start.ToLocalTime().ToString("yyyy-MM-dd");
             var eventSubject = ScrubSubject(e.Subject);
             var eventFilename = $"{eventDateString} {eventSubject}.md";
-            if (!existingFiles.Contains(eventFilename) && !IsIgnore(e.Subject, filters))
+            if (!existingFiles.Contains(eventFilename) && !IsIgnore(e.Subject, e.EventBody != null ? e.EventBody.Content : "", filters))
             {
                 string filePath;
                 if (IsPersonal(e.Subject, filters))

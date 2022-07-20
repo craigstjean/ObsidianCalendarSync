@@ -3,6 +3,7 @@ using System;
 using CalendarSync.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CalendarSync.Migrations
 {
     [DbContext(typeof(EventContext))]
-    partial class EventContextModelSnapshot : ModelSnapshot
+    [Migration("20220720151457_AddSyncState")]
+    partial class AddSyncState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "6.0.6");
@@ -220,14 +222,8 @@ namespace CalendarSync.Migrations
                     b.Property<string>("DeltaUrl")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("EndWindow")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Principal")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("StartWindow")
                         .HasColumnType("TEXT");
 
                     b.HasKey("SyncStateId");

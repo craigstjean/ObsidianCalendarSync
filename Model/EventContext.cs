@@ -11,6 +11,7 @@ public class EventContext : DbContext
     public DbSet<EventLocation> EventLocations { get; set; }
     public DbSet<AdditionalData> AdditionalDatas { get; set; }
     public DbSet<EventFilter> EventFilters { get; set; }
+    public DbSet<SyncState> SyncStates { get; set; }
 
     public string DbPath { get; }
 
@@ -150,4 +151,13 @@ public class EventFilter
     public string Search { get; set; }
     public bool IsIgnore { get; set; }
     public bool IsPersonal { get; set; }
+}
+
+public class SyncState
+{
+    public int SyncStateId { get; set; }
+    public string Principal { get; set; }
+    public string? DeltaUrl { get; set; }
+    public DateTime StartWindow { get; set; }
+    public DateTime EndWindow { get; set; }
 }
