@@ -100,11 +100,17 @@ internal class Program
                         continue;
                     }
 
+                    var isCancelled = false;
+                    if (e.IsCancelled.HasValue)
+                    {
+                        isCancelled = e.IsCancelled.Value;
+                    }
+
                     var existingEvent = db.Events
                         .Include(e => e.EventBody)
                         .Include(e => e.EventLocation)
                         .FirstOrDefault(ee => ee.ICalUid == e.ICalUId && ee.Uid == e.Id);
-                    if (existingEvent == null)
+                    if (existingEvent == null && !isCancelled)
                     {
                         var dbEvent = new CalendarSync.Model.Event
                         {
@@ -142,6 +148,13 @@ internal class Program
                         };
 
                         db.Events.Add(dbEvent);
+                        db.SaveChanges();
+                    }
+                    else if (existingEvent != null && isCancelled)
+                    {
+                        if (existingEvent.EventBody != null) db.EventBodies.Remove(existingEvent.EventBody);
+                        if (existingEvent.EventLocation != null) db.EventLocations.Remove(existingEvent.EventLocation);
+                        db.Events.Remove(existingEvent);
                         db.SaveChanges();
                     }
                     else
