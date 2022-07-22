@@ -157,7 +157,7 @@ internal class Program
                         db.Events.Remove(existingEvent);
                         db.SaveChanges();
                     }
-                    else
+                    else if (existingEvent != null)
                     {
                         existingEvent.Start = DateTime.Parse(e.Start.DateTime, CultureInfo.CreateSpecificCulture(e.Start.TimeZone));
                         existingEvent.End = DateTime.Parse(e.End.DateTime, CultureInfo.CreateSpecificCulture(e.End.TimeZone));
