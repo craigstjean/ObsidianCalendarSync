@@ -241,6 +241,27 @@ internal class Program
         }
     }
 
+    private static void PurgeEmptyDailyNotesInPath(string path)
+    {
+        var files = Directory.GetFiles(path, "*.md", SearchOption.AllDirectories);
+        var dateRegex = new Regex(@"^(\d{4}-\d{2}-\d{2}).md$");
+        foreach (var file in files)
+        {
+            var filename = Path.GetFileName(file);
+            var matches = dateRegex.Matches(filename);
+            if (matches.Count > 0)
+            {
+                var dateString = matches[0].Groups[1].Value;
+
+                if (IsUntouchedDaily(file))
+                {
+                    System.Console.WriteLine($"Deleting {filename}...");
+                    File.Delete(file);
+                }
+            }
+        }
+    }
+
     private static List<string> CleanFilesInPath(string path, DateTime oldestDate, DateTime newestDate)
     {
         var files = Directory.GetFiles(path, "*.md", SearchOption.AllDirectories);
@@ -279,6 +300,18 @@ internal class Program
         var untouched = lines.Contains("==DELETABLE==");
 
         return generated && untouched;
+    }
+
+    private static bool IsUntouchedDaily(string file)
+    {
+        var lines = File.ReadAllLines(file);
+
+        var untouched = lines[3] == "## Personal" &&
+                        lines[7] == "## Work" &&
+                        lines[11] == "## Achievements" &&
+                        lines[16] == "## Tools";
+
+        return untouched;
     }
 
     private static string ScrubSubject(string subject)
@@ -377,10 +410,21 @@ internal class Program
         }
     }
 
+    private static void Purge()
+    {
+        var builder = new ConfigurationBuilder().AddJsonFile($"appsettings.json", true, true);
+        var config = builder.Build();
+        
+        PurgeInPath(config["ObsidianWorkPath"]);
+        PurgeInPath(config["ObsidianPersonalPath"]);
+        PurgeEmptyDailyNotesInPath(config["ObsidianDailyNotesPath"]);
+    }
+
     private static async Task Main(string[] args)
     {
         if (args.Length == 0)
         {
+            Purge();
             await Sync();
             await Export();
         }
@@ -394,11 +438,11 @@ internal class Program
         }
         else if (args[0] == "--purge")
         {
-            var builder = new ConfigurationBuilder().AddJsonFile($"appsettings.json", true, true);
-            var config = builder.Build();
-            
-            PurgeInPath(config["ObsidianWorkPath"]);
-            PurgeInPath(config["ObsidianPersonalPath"]);
+            Purge();
+        }
+        else
+        {
+            Console.WriteLine("--sync, --export, --purge");
         }
     }
 }
